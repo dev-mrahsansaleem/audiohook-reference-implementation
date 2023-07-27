@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import Fastify, { FastifyInstance } from 'fastify';
 import websocket from '@fastify/websocket';
 import dotenv from 'dotenv';
@@ -23,6 +25,12 @@ const loggerPrettyTransport: pino.TransportSingleOptions<PrettyOptions> = {
 };
 
 const server = Fastify({
+    http2: true,
+    https: {
+        allowHTTP1: true, // fallback support for HTTP1
+        key: readFileSync(join(__dirname, 'server.key')),
+        cert: readFileSync(join(__dirname, 'server.cert')),
+    },
     logger: isDev ? ({ 
         transport: loggerPrettyTransport
     }) : true

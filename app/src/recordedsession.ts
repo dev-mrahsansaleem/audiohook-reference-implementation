@@ -54,6 +54,7 @@ const moveFileToBucket = async (srcpath: string, bucket: RecordingBucket, key: s
 const logLevelMap: {
     [key in LogLevel]: number;
 } = {
+    'silent': 60,
     'fatal': 60,
     'error': 50,
     'warn':  40,

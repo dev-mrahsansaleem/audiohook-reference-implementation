@@ -9,6 +9,7 @@
   "scripts": {
     "setup": "npm install",
     "start": "ts-node src/index.ts",
+    "serve": "npm start -- --uri wss://127.0.0.1:3000/api/v1/audiohook/ws --api-key SGVsbG8sIEkgYW0gdGhlIEFQSSBrZXkh --client-secret TXlTdXBlclNlY3JldEtleVRlbGxOby0xITJAMyM0JDU= --wavfile ./in/example.wav",
     "build": "tsc --project tsconfig.json --pretty && npm run lint",
     "buildcheck": "tsc --project tsconfig.json --pretty --noEmit && npm run lint",
     "lint": "eslint . --ext .ts --cache --max-warnings 0",
@@ -21,7 +22,6 @@
     "install": "^0.13.0",
     "pino": "^8.4.2",
     "pino-pretty": "^8.1.0",
-    "tdigest": "^0.1.2",
     "tdigest": "^0.1.2",
     "uuid": "^8.3.2",
     "wav": "^1.0.2",

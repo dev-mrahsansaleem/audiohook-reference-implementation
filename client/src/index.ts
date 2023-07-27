@@ -318,7 +318,7 @@ process.stdin.on('keypress', (str, key) => {
         logger.info(`You pressed the ${JSON.stringify(str)} key: ${JSON.stringify(key)}`);
     }
 });
-
+process.env['NODE_TLS_REJECT_UNAUTHORIZED'] = '0';
 process.once('SIGTERM', () => {
     logger.info('SIGTERM!');
     closer();
