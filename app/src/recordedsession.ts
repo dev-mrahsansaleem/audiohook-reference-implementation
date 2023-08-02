@@ -4,18 +4,18 @@ import { WriteStream, createWriteStream, createReadStream } from 'fs';
 import { unlink, stat } from 'fs/promises';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import {
-    ClientMessage, 
+    ClientMessage,
     createServerSession,
     Duration,
-    JsonObject, 
+    JsonObject,
     Logger,
-    MediaDataFrame, 
+    MediaDataFrame,
     normalizeError,
-    ServerMessage, 
+    ServerMessage,
     ServerWebSocket,
     ServerSession,
     StatisticsInfo,
-    StreamDuration, 
+    StreamDuration,
     Uuid,
     WavFileWriter,
 } from '../audiohook';
@@ -57,13 +57,13 @@ const logLevelMap: {
     'silent': 60,
     'fatal': 60,
     'error': 50,
-    'warn':  40,
-    'info':  30,
+    'warn': 40,
+    'info': 30,
     'debug': 20,
     'trace': 10,
 } as const;
 
-const logLevelNames = Object.entries(logLevelMap).sort(([,a], [, b]) => (a - b)).map(([k]) => k as LogLevel);
+const logLevelNames = Object.entries(logLevelMap).sort(([, a], [, b]) => (a - b)).map(([k]) => k as LogLevel);
 
 const lookupLogLevelName = (level: number): LogLevel => (
     logLevelNames[Math.floor((level - 5) / 10)]
@@ -106,7 +106,7 @@ class SidecarFileWriter {
     }
 
     async close(): Promise<void> {
-        if(this.fileWriter) {
+        if (this.fileWriter) {
             this.renderEntry('end', {});
             const fileWriter = this.fileWriter;
             this.fileWriter = null;
@@ -128,7 +128,7 @@ class SidecarFileWriter {
         if (level >= this.minLogLevelOuter) {
             this.outerLogger[lookupLogLevelName(level)](msg);
         }
-        if(level >= this.minLogLevelSidecar) {
+        if (level >= this.minLogLevelSidecar) {
             this.renderEntry('logger', { level, msg });
         }
     }
@@ -142,7 +142,7 @@ class SidecarFileWriter {
     }
 
     writeStatisticsUpdate(info: StatisticsInfo): void {
-        this.renderEntry('statistics', { 
+        this.renderEntry('statistics', {
             rtt: info.rtt.asDuration()
         });
     }
@@ -223,19 +223,47 @@ export class RecordedSession {
                 if (!selectedMedia) {
                     return; // If we don't have media we don't create a WAV file
                 }
-                this.filePathWav = `${this.sidecar.filepath.slice(0, -4)}wav`;
-                session.logger.info(`Creating WAV file: "${this.filePathWav}"`);
-                const writer = await WavFileWriter.create(this.filePathWav, selectedMedia.format, selectedMedia.rate, selectedMedia.channels.length);
-                const listener = (frame: MediaDataFrame): void => {
-                    writer.writeAudio(frame.audio.data);
-                };
-                session.on('audio', listener);
+                if (selectedMedia.channels.length == 1) {
+
+                    this.filePathWav = `${this.sidecar.filepath.slice(0, -4)}wav`;
+                    session.logger.info(`Creating WAV file: "${this.filePathWav}"`);
+                    const writer = await WavFileWriter.create(this.filePathWav, selectedMedia.format, selectedMedia.rate, selectedMedia.channels.length);
+                    const listener = (frame: MediaDataFrame): void => {
+                        writer.writeAudio(frame.audio.data);
+                    };
+                    session.on('audio', listener);
+                    return async () => {
+                        // Close handler
+                        session.off('audio', listener);
+                        const samples = await writer.close();
+                        session.logger.info(`Closed WAV file "${this.filePathWav}", SamplesWritten: ${samples} (${samples/selectedMedia.rate}s)`);
+                    };
+                } else if (selectedMedia.channels.length == 2) {
+                    this.filePathWav = `${this.sidecar.filepath.slice(0, -5)}_1.wav`;
+                    session.logger.info(`Creating WAV file: "${this.filePathWav}"`);
+                    const C_even_writer = await WavFileWriter.create(this.filePathWav, selectedMedia.format, selectedMedia.rate, selectedMedia.channels.length);
+                    const C_listener = (frame: MediaDataFrame): void => {
+                        C_even_writer.writeAudio((frame.audio.data as Uint8Array | Int16Array).map((value, index) => index % 2 == 0 ?value:255));
+                        C_odd_writer.writeAudio((frame.audio.data as Uint8Array | Int16Array).map((value, index) => index % 2 == 1 ?value:255));
+                    };
+
+                    this.filePathWav = `${this.sidecar.filepath.slice(0, -5)}_2.wav`;
+                    session.logger.info(`Creating WAV file: "${this.filePathWav}"`);
+                    const C_odd_writer = await WavFileWriter.create(this.filePathWav, selectedMedia.format, selectedMedia.rate, selectedMedia.channels.length);
+                    session.on('audio', C_listener);
+                    return async () => {
+                        // Close handler
+                        session.off('audio', C_listener);
+                        const samples = await C_odd_writer.close();
+                        session.logger.info(`Closed WAV file "${this.filePathWav}", SamplesWritten: ${samples} (${samples/selectedMedia.rate}s)`);
+                    };
+                } else {
+                    session.logger.error('invalid');
+                }
                 return async () => {
                     // Close handler
-                    session.off('audio', listener);
-                    const samples = await writer.close();
-                    session.logger.info(`Closed WAV file "${this.filePathWav}", SamplesWritten: ${samples} (${samples/selectedMedia.rate}s)`);
                 };
+
             }
         );
     }
@@ -262,16 +290,16 @@ export class RecordedSession {
 
         let s3UriWav: string | null = null;
         let s3UriSidecar: string | null = null;
-        if(this.recordingBucket) {
+        if (this.recordingBucket) {
             const iso8601 = this.sidecar.startTime.toISOString();
             const keybase = `${iso8601.substring(0, 10)}/${this.sidecar.id}`;
 
-            if(this.filePathWav) {
+            if (this.filePathWav) {
                 try {
                     const { uri, size } = await moveFileToBucket(this.filePathWav, this.recordingBucket, `${keybase}.wav`);
                     s3UriWav = uri;
                     outerLogger.info(`Moved ${this.filePathWav} to ${s3UriWav}. Size: ${size}`);
-                } catch(err) {
+                } catch (err) {
                     outerLogger.warn(`Error copying "${this.filePathWav}" to bucket=${this.recordingBucket.name}, key=${keybase}.wav: ${normalizeError(err).message}`);
                 }
             }
@@ -280,17 +308,17 @@ export class RecordedSession {
                 const { uri, size } = await moveFileToBucket(this.sidecar.filepath, this.recordingBucket, `${keybase}.json`);
                 s3UriSidecar = uri;
                 outerLogger.info(`Moved ${this.sidecar.filepath} to ${s3UriSidecar}. Size: ${size}`);
-            } catch(err) {
+            } catch (err) {
                 outerLogger.warn(`Error copying "${this.sidecar.filepath}" to bucket=${this.recordingBucket.name}, key=${keybase}.json: ${normalizeError(err).message}`);
             }
 
         } else {
             outerLogger.warn(`No S3 bucket configured, files not uploaded. Sidecar: ${this.sidecar.filepath}, WAV: ${this.filePathWav ? this.filePathWav : '<none>'}`);
         }
-        
+
         // All data moved to S3. Session complete for good.
         // TODO: Update/add record in/to DynamoDB
-        
+
         activeSessions.delete(this.recordingId);
     }
 }
